@@ -10,6 +10,13 @@
 // CTRL Key basically strips the 6 and 7th bit from the key that has been
 // pressed with ctrl, nice!
 #define CTRL_KEY(k) ((k) & 0x1F)
+enum eKey {
+    UP = 1000,
+    DOWN,
+    LEFT,
+    RIGHT
+};
+
 #define ENVY_VERSION "0.0.1"
 
 struct editorConfig {
@@ -144,15 +151,36 @@ void enableRawMode() {
         die("tcsetattr");
 }
 
-char eReadKey() {
+int eReadKey() {
     int nread;
     char c;
+    char esc = '\x1b';
 
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
+    if (c == '\x1b') {
+        // escape sequence?
+        char seq[3];
 
-    return c;
+        // check if it is, otherwise it might just be escape...
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return esc;
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return esc;
+
+        if (seq[0] == '[') {
+            // parse escape sequence
+            switch (seq[1]) {
+                case 'A': return UP;
+                case 'B': return DOWN;
+                case 'C': return RIGHT;
+                case 'D': return LEFT;
+            }
+        }
+
+        return esc;
+    } else {
+        return c;
+    }
 }
 
 int getWindowSize(int *rows, int *cols) {
@@ -168,33 +196,37 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 // INPUT
-void eMoveCursor(char key) {
+void eMoveCursor(int key) {
     switch(key) {
-        case 'h':
-            E.cx--;
+        case LEFT:
+            if (E.cx != 0)
+                E.cx--;
             break;
-        case 'j':
-            E.cy++;
+        case DOWN:
+            if (E.cy != E.screenrows - 1)
+                E.cy++;
             break;
-        case 'k':
-            E.cy--;
+        case UP:
+            if (E.cy != 0)
+                E.cy--;
             break;
-        case 'l':
-            E.cx++;
+        case RIGHT:
+            if (E.cx != E.screencols - 1)
+                E.cx++;
             break;
     }
 }
 
 void eProcessKeypress() {
-    char c = eReadKey();
+    int c = eReadKey();
     switch(c) {
         case CTRL_KEY('q'):
             exit(0);
             break;
-        case 'h':
-        case 'j':
-        case 'k':
-        case 'l':
+        case RIGHT:
+        case LEFT:
+        case DOWN:
+        case UP:
             eMoveCursor(c);
             break;
     }
