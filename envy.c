@@ -64,6 +64,15 @@ void abFree(struct abuf *ab) {
 }
 
 // OUTPUT
+void eScroll() {
+    if (E.cy < E.rowoff) {
+        E.rowoff = E.cy;
+    }
+    if (E.cy >= E.rowoff + E.screenrows) {
+        E.rowoff = E.cy - E.screenrows + 1;
+    }
+}
+
 void eDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenrows; y++) {
@@ -100,6 +109,8 @@ void eDrawRows(struct abuf *ab) {
 }
 
 void eRefreshScreen() {
+    eScroll();
+
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab, "\x1b[?25l", 6);
@@ -109,7 +120,7 @@ void eRefreshScreen() {
 
     // position the cursor 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
     abAppend(&ab, buf, strlen(buf));
 
     //abAppend(&ab, "\x1b[H", 3);
@@ -251,7 +262,7 @@ void eMoveCursor(int key) {
                 E.cx--;
             break;
         case DOWN:
-            if (E.cy != E.screenrows - 1)
+            if (E.cy < E.numrows)
                 E.cy++;
             break;
         case UP:
