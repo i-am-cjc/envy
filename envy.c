@@ -12,6 +12,9 @@
 #include <string.h>
 #include <sys/types.h>
 
+#define ENVY_VERSION "0.0.1"
+#define ENVY_TAB_STOP 4
+
 // CTRL Key basically strips the 6 and 7th bit from the key that has been
 // pressed with ctrl, nice!
 #define CTRL_KEY(k) ((k) & 0x1F)
@@ -22,16 +25,18 @@ enum eKey {
     RIGHT
 };
 
-#define ENVY_VERSION "0.0.1"
-
 typedef struct erow {
     int size;
+    int rsize;
     char *chars;
+    char *render;
 } erow;
 
 struct editorConfig {
     int cx, cy;
+    int rx;
     int rowoff;
+    int coloff;
     int screenrows;
     int screencols;
     int numrows;
@@ -65,11 +70,22 @@ void abFree(struct abuf *ab) {
 
 // OUTPUT
 void eScroll() {
+    E.rx = 0;
+    if (E.cy < E.numrows) {
+        E.rx = eRowCxToRx(&E.row[E.cy], E.cx);
+    }
+
     if (E.cy < E.rowoff) {
         E.rowoff = E.cy;
     }
     if (E.cy >= E.rowoff + E.screenrows) {
         E.rowoff = E.cy - E.screenrows + 1;
+    }
+    if (E.rx < E.coloff) {
+        E.rowoff = E.rx;
+    }
+    if (E.rx >= E.coloff + E.screencols) {
+        E.coloff = E.rx - E.screencols + 1;
     }
 }
 
@@ -96,15 +112,14 @@ void eDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
             }
         } else {
-            int len = E.row[filerow].size;
+            int len = E.row[filerow].rsize - E.coloff;
+            if (len < 0) len = 0;
             if (len > E.screencols) len = E.screencols;
-            abAppend(ab, E.row[filerow].chars, len);
+            abAppend(ab, &E.row[filerow].render[E.coloff], len);
         }
 
         abAppend(ab, "\x1b[K", 3);
-        if (y < E.screenrows - 1) {
-            abAppend(ab, "\r\n", 2);
-        }
+        abAppend(ab, "\r\n", 2);
     }
 }
 
@@ -120,7 +135,8 @@ void eRefreshScreen() {
 
     // position the cursor 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, 
+                                              (E.rx - E.coloff) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     //abAppend(&ab, "\x1b[H", 3);
@@ -214,6 +230,39 @@ int eReadKey() {
     }
 }
 
+int eRowCxToRx(erow *row, int cx) {
+    int rx = 0;
+    int i;
+    for (i = 0; i < cx; i++) {
+        if (row->chars[i] == '\t')
+            rx += (ENVY_TAB_STOP - 1) - (rx % ENVY_TAB_STOP);
+        rx++;
+    }
+    return rx;
+}
+
+void eUpdateRow(erow *row) {
+    int tabs = 0;
+    int i;
+    for (i = 0; i < row->size; i++)
+        if (row->chars[i] == '\t') tabs++;
+
+    free(row->render);
+    row->render = malloc(row->size + tabs*(ENVY_TAB_STOP - 1) + 1);
+
+    int idx = 0;
+    for (i = 0; i < row->size; i++) {
+        if (row->chars[i] == '\t') {
+            row->render[idx++] = ' ';
+            while (idx % ENVY_TAB_STOP  != 0) row->render[idx++] = ' ';
+        } else {
+            row->render[idx++] = row->chars[i];
+        }
+    }
+    row->render[idx] = '\0';
+    row->rsize = idx;
+}
+
 void eAppendRow(char *s, size_t len) {
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
@@ -222,6 +271,11 @@ void eAppendRow(char *s, size_t len) {
     E.row[at].chars = malloc(len + 1);
     memcpy(E.row[at].chars, s, len);
     E.row[at].chars[len] = '\0';
+
+    E.row[at].rsize = 0;
+    E.row[at].render = NULL;
+    eUpdateRow(&E.row[at]);
+
     E.numrows++;
 }
 
@@ -256,6 +310,9 @@ int getWindowSize(int *rows, int *cols) {
 
 // INPUT
 void eMoveCursor(int key) {
+    // get the current row
+    erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
     switch(key) {
         case LEFT:
             if (E.cx != 0)
@@ -270,10 +327,16 @@ void eMoveCursor(int key) {
                 E.cy--;
             break;
         case RIGHT:
-            if (E.cx != E.screencols - 1)
+            if (row && E.cx < row->size)
                 E.cx++;
             break;
     }
+
+    // move the cursor if we are beyond the line we end up on
+    row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+    int rowlen = row ? row->size : 0;
+    if (E.cx > rowlen)
+        E.cx = rowlen;
 }
 
 void eProcessKeypress() {
@@ -296,12 +359,17 @@ void eProcessKeypress() {
 void initEditor() {
     E.cx = 0;
     E.cy = 0;
+    E.rx = 0;
     E.rowoff = 0;
+    E.coloff = 0;
 
     E.numrows = 0;
     E.row = NULL;
 
     if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+
+    // status line and commadn line
+    E.screenrows -= 2;
 }
 
 int main(int argc, char *argv[]) {
