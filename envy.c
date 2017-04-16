@@ -11,6 +11,8 @@
 #include <sys/ioctl.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
+#include <stdarg.h>
 
 #define ENVY_VERSION "0.0.1"
 #define ENVY_TAB_STOP 4
@@ -43,6 +45,8 @@ struct editorConfig {
     erow *row;
     char *filename;
     struct termios origTermios;
+    char statusmsg[80];
+    time_t statusmsg_time;
 };
 
 struct editorConfig E;
@@ -144,6 +148,15 @@ void eDrawStatusBar(struct abuf *ab) {
         }
     }
     abAppend(ab, "\x1b[m", 3);
+    abAppend(ab, "\r\n", 2);
+}
+
+void eDrawMessageBar(struct abuf *ab) {
+    abAppend(ab, "\x1b[K", 3);
+    int msglen = strlen(E.statusmsg);
+    if (msglen > E.screencols) msglen = E.screencols;
+    if (msglen && time(NULL) - E.statusmsg_time < 5)
+        abAppend(ab, E.statusmsg, msglen);
 }
 
 void eRefreshScreen() {
@@ -156,6 +169,7 @@ void eRefreshScreen() {
 
     eDrawRows(&ab);
     eDrawStatusBar(&ab);
+    eDrawMessageBar(&ab);
 
     // position the cursor 
     char buf[32];
@@ -170,6 +184,13 @@ void eRefreshScreen() {
     abFree(&ab);
 }
 
+void eSetStatusMessage(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+    va_end(ap);
+    E.statusmsg_time = time(NULL);
+}
 // TERMINAL
 
 void die(const char *s) {
@@ -398,6 +419,10 @@ void initEditor() {
 
     // status line and commadn line
     E.screenrows -= 2;
+
+    // status message
+    E.statusmsg[0] = '\0';
+    E.statusmsg_time = 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -405,6 +430,8 @@ int main(int argc, char *argv[]) {
     initEditor();
     if (argc >= 2)
         eOpen(argv[1]);
+
+    eSetStatusMessage("C-q to quit");
 
     while (1) {
         eRefreshScreen();
