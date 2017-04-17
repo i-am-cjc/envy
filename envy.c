@@ -694,8 +694,12 @@ void eProcessKeypress() {
 				// TODO put row
 				break;
 
+			case 'O':
+				E.cy--;
 			case 'o':
-				// TODO new line below current, enter insert
+				E.cx = E.row[E.cy].size;
+				eInsertNewLine();
+				E.mode = 1;
 				break;
  
             case '/':
