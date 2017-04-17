@@ -51,6 +51,7 @@ struct editorConfig {
     struct termios origTermios;
     char statusmsg[80];
     time_t statusmsg_time;
+	int mode; // 0 for N, 1 for I
 };
 
 struct editorConfig E;
@@ -58,7 +59,7 @@ struct editorConfig E;
 /*** prototypes ***/
 char *ePrompt(char *prompt, void (*callback)(char *, int));
 
-// APPEND BUFFER
+/*** APPEND BUFFER ***/
 struct abuf {
     char *b;
     int len;
@@ -139,11 +140,14 @@ void eDrawStatusBar(struct abuf *ab) {
     // render the status bar
     abAppend(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
-    int len = snprintf(status, sizeof(status), "%.20s %s",
+    
+	int len = snprintf(status, sizeof(status), "%.20s %s",
             E.filename ? E.filename : "[No Name]",
             E.dirty ? "[modified]" : "");
-    int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d ",
-            E.cy + 1, E.numrows);
+    int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d %s",
+            E.cy + 1, E.numrows,
+            E.mode ? "I" : "N");
+
     if(len > E.screencols) len = E.screencols;
     abAppend(ab, status, len);
     while (len < E.screencols) {
@@ -647,58 +651,90 @@ void eProcessKeypress() {
     static int quit_times = ENVY_QUIT_TIMES;
 
     int c = eReadKey();
+    if (E.mode) { // insert mode
+        switch(c) {
+            case '\r':
+                eInsertNewLine();
+                break;
 
-    switch(c) {
-        case '\r':
-            eInsertNewLine();
-            break;
+            case BACKSPACE:
+            case CTRL_KEY('h'):
+                eDelChar();
+                break;
 
-        case BACKSPACE:
-        case CTRL_KEY('h'):
-            eDelChar();
-            break;
+            case CTRL_KEY('q'):
+                if (E.dirty && quit_times > 0) {
+                    eSetStatusMessage("File changed. "
+                      "Press %d more times to quit.", quit_times);
+                    quit_times--;
+                    return;
+                }
+                write(STDOUT_FILENO, "\x1b[2J", 4);
+                write(STDOUT_FILENO, "\x1b[H", 3);
+                exit(0);
+                break;
 
-        // Some of these are temp whilst I implemental modes
-        case CTRL_KEY('d'):
-            eDelRow(E.cy);
-            break;
+            case RIGHT:
+            case LEFT:
+            case DOWN:
+            case UP:
+                eMoveCursor(c);
+                break;
 
-        case CTRL_KEY('f'):
-            eFind();
-            break;
+            case '\x1b':
+                E.mode = 0;
+                break;
 
-        case CTRL_KEY('q'):
-            if (E.dirty && quit_times > 0) {
-                eSetStatusMessage("File changed. "
-                  "Press C-q %d more times to quit.", quit_times);
-                quit_times--;
-                return;
-            }
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
-            exit(0);
-            break;
+            default:
+                eInsertChar(c);
+                break;
+        }
+    } else { // normal mode 
+        switch(c) {
+            // Some of these are temp whilst I implemental modes
+            case 'd':
+                eDelRow(E.cy);
+                break;
 
-        case CTRL_KEY('s'):
-            eSave();
-            break;
+            case '/':
+                eFind();
+                break;
 
-        case RIGHT:
-        case LEFT:
-        case DOWN:
-        case UP:
-            eMoveCursor(c);
-            break;
+            case 'i':
+                E.mode = 1;
+                break;
 
-        case CTRL_KEY('l'):
-        case '\x1b':
-            break;
+            case RIGHT:
+            case LEFT:
+            case DOWN:
+            case UP:
+                eMoveCursor(c);
+                break;
 
-        default:
-            eInsertChar(c);
-            break;
+            case CTRL_KEY('l'):
+            case '\x1b':
+                E.mode = 0;
+                break;
+
+            case 'w':
+                eSave();
+                break;
+
+            case 'z':
+                if (E.dirty && quit_times > 0) {
+                    eSetStatusMessage("File changed. "
+                      "Press C-q %d more times to quit.", quit_times);
+                    quit_times--;
+                    return;
+                }
+                write(STDOUT_FILENO, "\x1b[2J", 4);
+                write(STDOUT_FILENO, "\x1b[H", 3);
+                exit(0);
+                break;
+
+        }
+        quit_times = ENVY_QUIT_TIMES;
     }
-    quit_times = ENVY_QUIT_TIMES;
 }
 
 // init
@@ -724,6 +760,8 @@ void initEditor() {
     // status message
     E.statusmsg[0] = '\0';
     E.statusmsg_time = 0;
+
+    E.mode = 0;
 }
 
 int main(int argc, char *argv[]) {
