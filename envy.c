@@ -58,6 +58,7 @@ struct editorConfig E;
 
 /*** prototypes ***/
 char *ePrompt(char *prompt, void (*callback)(char *, int));
+int eRowCxToRx(erow *row, int cx);
 
 /*** APPEND BUFFER ***/
 struct abuf {
