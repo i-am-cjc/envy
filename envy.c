@@ -17,6 +17,7 @@
 
 #define ENVY_VERSION "0.0.1"
 #define ENVY_TAB_STOP 4
+#define ENVY_QUIT_TIMES 2
 
 // CTRL Key basically strips the 6 and 7th bit from the key that has been
 // pressed with ctrl, nice!
@@ -45,6 +46,7 @@ struct editorConfig {
     int screencols;
     int numrows;
     erow *row;
+    int dirty;
     char *filename;
     struct termios origTermios;
     char statusmsg[80];
@@ -52,6 +54,9 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/*** prototypes ***/
+char *ePrompt(char *prompt);
 
 // APPEND BUFFER
 struct abuf {
@@ -134,10 +139,11 @@ void eDrawStatusBar(struct abuf *ab) {
     // render the status bar
     abAppend(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
-    int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-            E.filename ? E.filename : "[No Name]", E.numrows);
-    int rlen = snprintf(rstatus, sizeof(rstatus), "%d ",
-            E.cy + 1);
+    int len = snprintf(status, sizeof(status), "%.20s %s",
+            E.filename ? E.filename : "[No Name]",
+            E.dirty ? "[modified]" : "");
+    int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d ",
+            E.cy + 1, E.numrows);
     if(len > E.screencols) len = E.screencols;
     abAppend(ab, status, len);
     while (len < E.screencols) {
@@ -193,8 +199,8 @@ void eSetStatusMessage(const char *fmt, ...) {
     va_end(ap);
     E.statusmsg_time = time(NULL);
 }
-// TERMINAL
 
+// TERMINAL
 void die(const char *s) {
     //eBlankScreen();
     perror(s);
@@ -311,10 +317,12 @@ void eUpdateRow(erow *row) {
     row->rsize = idx;
 }
 
-void eAppendRow(char *s, size_t len) {
-    E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+void eInsertRow(int at, char *s, size_t len) {
+    if (at < 0 || at > E.numrows) return;
 
-    int at = E.numrows;
+    E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+    memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+
     E.row[at].size = len;
     E.row[at].chars = malloc(len + 1);
     memcpy(E.row[at].chars, s, len);
@@ -325,6 +333,20 @@ void eAppendRow(char *s, size_t len) {
     eUpdateRow(&E.row[at]);
 
     E.numrows++;
+    E.dirty++;
+}
+
+void eFreeRow(erow *row) {
+    free(row->render);
+    free(row->chars);
+}
+
+void eDelRow(int at) {
+    if (at < 0 || at >= E.numrows) return;
+    eFreeRow(&E.row[at]);
+    memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+    E.numrows--;
+    E.dirty++;
 }
 
 void eRowInsertChar(erow *row, int at, int c) {
@@ -334,15 +356,64 @@ void eRowInsertChar(erow *row, int at, int c) {
     row->size++;
     row->chars[at] = c;
     eUpdateRow(row);
+    E.dirty++;
+}
+
+void eRowAppendString(erow *row, char *s, size_t len) {
+    row->chars = realloc(row->chars, row->size + len + 1);
+    memcpy(&row->chars[row->size], s, len);
+    row->size += len;
+    row->chars[row->size] = '\0';
+    eUpdateRow(row);
+    E.dirty++;
+}
+
+void eRowDelChar(erow *row, int at) {
+    if (at < 0 || at >= row->size) return;
+    memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+    row->size--;
+    eUpdateRow(row);
+    E.dirty++;
 }
 
 /*** Editor Ops ***/
 void eInsertChar(int c) {
     if (E.cy == E.numrows)
-        eAppendRow("", 0);
+        eInsertRow(E.numrows, "", 0);
 
     eRowInsertChar(&E.row[E.cy], E.cx, c);
     E.cx++;
+}
+
+void eInsertNewLine() {
+    if (E.cx == 0) {
+        eInsertRow(E.cy, "", 0);
+    } else {
+        erow *row = &E.row[E.cy];
+        eInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+        row = &E.row[E.cy];
+        row->size = E.cx;
+        row->chars[row->size] = '\0';
+        eUpdateRow(row);
+    }
+    E.cy++;
+    E.cx = 0;
+}
+
+void eDelChar() {
+    if (E.cy == E.numrows) return;
+    if (E.cx == 0 && E.cy == 0) return;
+
+    erow *row = &E.row[E.cy];
+    if (E.cx > 0) {
+        eRowDelChar(row, E.cx - 1);
+        E.cx--;
+    } else {
+        E.cx = E.row[E.cy - 1].size;
+        eRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
+        eDelRow(E.cy);
+        E.cy--;
+    }
 }
 
 /*** file i/o ***/
@@ -380,23 +451,44 @@ void eOpen(char *filename) {
     while ((linelen = getline(&line, &linecap, fp)) != -1) {
         if (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
-        eAppendRow(line, linelen);
+        eInsertRow(E.numrows, line, linelen);
     }
     free(line);
     fclose(fp);
+
+    // reset the "dirtiness" of the file
+    E.dirty = 0;
 }
 
 void eSave() {
-    if (E.filename == NULL) return;
+    if (E.filename == NULL) 
+        E.filename = ePrompt("Filename: %s");
+    // If the prompt was aborted we are NULL again
+    if (E.filename == NULL) {
+        eSetStatusMessage("Aborted");
+        return;
+    }
 
     int len;
     char *buf = eRowsToString(&len);
 
     int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
-    ftruncate(fd, len);
-    write(fd, buf, len);
-    close(fd);
+    if (fd != -1) {
+        if (ftruncate(fd, len) != -1) {
+            if (write(fd, buf, len) == len) {
+                close(fd);
+                free(buf);
+                eSetStatusMessage("%d bytes written to disk", len);
+                // reset the "dirtiness" of the file
+                E.dirty = 0;
+                return;
+            }
+        }
+        close(fd);
+    }
+
     free(buf);
+    eSetStatusMessage("Error writing to disk: %s", strerror(errno));
 }
 
 int getWindowSize(int *rows, int *cols) {
@@ -411,7 +503,41 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
-// INPUT
+/** input **/
+char *ePrompt(char *prompt) {
+    size_t bufsize = 128;
+    char *buf = malloc(bufsize);
+
+    size_t buflen = 0;
+    buf[0] = '\0';
+
+    while (1) {
+        eSetStatusMessage(prompt, buf);
+        eRefreshScreen();
+
+        int c = eReadKey();
+        if (c == BACKSPACE || c == CTRL_KEY('h')) {
+            if (buflen != 0) buf[--buflen] = '\0';
+        } else if (c == '\x1b') {
+            eSetStatusMessage("");
+            free(buf);
+            return NULL;
+        } else if (c == '\r') {
+            if (buflen != 0) {
+                eSetStatusMessage("");
+                return buf;
+            }
+        } else if (!iscntrl(c) && c < 128) {
+            if (buflen == bufsize - 1) {
+                bufsize *= 2;
+                buf = realloc(buf, bufsize);
+            }
+            buf[buflen++] = c;
+            buf[buflen] = '\0';
+        }
+    }
+}
+
 void eMoveCursor(int key) {
     // get the current row
     erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
@@ -443,18 +569,33 @@ void eMoveCursor(int key) {
 }
 
 void eProcessKeypress() {
+    static int quit_times = ENVY_QUIT_TIMES;
+
     int c = eReadKey();
+
     switch(c) {
         case '\r':
-            // TODO
+            eInsertNewLine();
             break;
 
         case BACKSPACE:
         case CTRL_KEY('h'):
-            // TODO
+            eDelChar();
             break;
 
+        // Some of these are temp whilst I implemental modes
+        case CTRL_KEY('d'):
+            eDelRow(E.cy);
+            break;
         case CTRL_KEY('q'):
+            if (E.dirty && quit_times > 0) {
+                eSetStatusMessage("File changed. "
+                  "Press C-q %d more times to quit.", quit_times);
+                quit_times--;
+                return;
+            }
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
 
@@ -477,6 +618,7 @@ void eProcessKeypress() {
             eInsertChar(c);
             break;
     }
+    quit_times = ENVY_QUIT_TIMES;
 }
 
 // init
@@ -490,6 +632,8 @@ void initEditor() {
 
     E.numrows = 0;
     E.row = NULL;
+    E.dirty = 0;
+
     E.filename = NULL;
 
     if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
