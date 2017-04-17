@@ -1,5 +1,5 @@
 # envy
-Look Ma, I am making a text editor
+Look Ma, I am making a text editor, and editing it in itself
 
 Next:
-http://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html
+108

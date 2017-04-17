@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 #define ENVY_VERSION "0.0.1"
 #define ENVY_TAB_STOP 4
@@ -21,6 +22,7 @@
 // pressed with ctrl, nice!
 #define CTRL_KEY(k) ((k) & 0x1F)
 enum eKey {
+    BACKSPACE = 127,
     UP = 1000,
     DOWN,
     LEFT,
@@ -275,6 +277,7 @@ int eReadKey() {
     }
 }
 
+/*** Row Ops ***/
 int eRowCxToRx(erow *row, int cx) {
     int rx = 0;
     int i;
@@ -324,6 +327,45 @@ void eAppendRow(char *s, size_t len) {
     E.numrows++;
 }
 
+void eRowInsertChar(erow *row, int at, int c) {
+    if (at < 0 || at > row->size) at = row->size;
+    row->chars = realloc(row->chars, row->size + 2);
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+    row->size++;
+    row->chars[at] = c;
+    eUpdateRow(row);
+}
+
+/*** Editor Ops ***/
+void eInsertChar(int c) {
+    if (E.cy == E.numrows)
+        eAppendRow("", 0);
+
+    eRowInsertChar(&E.row[E.cy], E.cx, c);
+    E.cx++;
+}
+
+/*** file i/o ***/
+char *eRowsToString(int *buflen) {
+    int totlen = 0;
+    int i;
+    for (i = 0; i < E.numrows; i++) 
+        totlen += E.row[i].size + 1;
+    *buflen = totlen;
+
+    char *buf = malloc(totlen);
+    char *p = buf;
+
+    for (i = 0; i < E.numrows; i++) {
+        memcpy(p, E.row[i].chars, E.row[i].size);
+        p += E.row[i].size;
+        *p = '\n';
+        p++;
+    }
+
+    return buf;
+}
+
 void eOpen(char *filename) {
     free(E.filename);
     E.filename = strdup(filename);
@@ -342,6 +384,19 @@ void eOpen(char *filename) {
     }
     free(line);
     fclose(fp);
+}
+
+void eSave() {
+    if (E.filename == NULL) return;
+
+    int len;
+    char *buf = eRowsToString(&len);
+
+    int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+    ftruncate(fd, len);
+    write(fd, buf, len);
+    close(fd);
+    free(buf);
 }
 
 int getWindowSize(int *rows, int *cols) {
@@ -390,14 +445,36 @@ void eMoveCursor(int key) {
 void eProcessKeypress() {
     int c = eReadKey();
     switch(c) {
+        case '\r':
+            // TODO
+            break;
+
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+            // TODO
+            break;
+
         case CTRL_KEY('q'):
             exit(0);
             break;
+
+        case CTRL_KEY('s'):
+            eSave();
+            break;
+
         case RIGHT:
         case LEFT:
         case DOWN:
         case UP:
             eMoveCursor(c);
+            break;
+
+        case CTRL_KEY('l'):
+        case '\x1b':
+            break;
+
+        default:
+            eInsertChar(c);
             break;
     }
 }
