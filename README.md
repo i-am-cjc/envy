@@ -1,6 +1,7 @@
 # envy
 
 Minimal text editor written as an excuse to get my head around C again
+
 Based on the kilo editor from:
 http://viewsourcecode.org/snaptoken/kilo/
 
@@ -11,3 +12,7 @@ In a state that it can alter files, and save them
 Things that are working:
 * Modes: Insert, and Normal
 * Searching
+
+TODO:
+* Lots of commands to implement in the source
+* Make tabs just use space, and let the flame wars begin

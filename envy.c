@@ -651,6 +651,7 @@ void eProcessKeypress() {
     static int quit_times = ENVY_QUIT_TIMES;
 
     int c = eReadKey();
+
     if (E.mode) { // insert mode
         switch(c) {
             case '\r':
@@ -660,18 +661,6 @@ void eProcessKeypress() {
             case BACKSPACE:
             case CTRL_KEY('h'):
                 eDelChar();
-                break;
-
-            case CTRL_KEY('q'):
-                if (E.dirty && quit_times > 0) {
-                    eSetStatusMessage("File changed. "
-                      "Press %d more times to quit.", quit_times);
-                    quit_times--;
-                    return;
-                }
-                write(STDOUT_FILENO, "\x1b[2J", 4);
-                write(STDOUT_FILENO, "\x1b[H", 3);
-                exit(0);
                 break;
 
             case RIGHT:
@@ -693,9 +682,22 @@ void eProcessKeypress() {
         switch(c) {
             // Some of these are temp whilst I implemental modes
             case 'd':
+				// TODO yank row
                 eDelRow(E.cy);
                 break;
 
+			case 'y':
+				// TODO yank row
+				break;
+
+			case 'p':
+				// TODO put row
+				break;
+
+			case 'o':
+				// TODO new line below current, enter insert
+				break;
+ 
             case '/':
                 eFind();
                 break;
@@ -711,7 +713,6 @@ void eProcessKeypress() {
                 eMoveCursor(c);
                 break;
 
-            case CTRL_KEY('l'):
             case '\x1b':
                 E.mode = 0;
                 break;
@@ -720,10 +721,22 @@ void eProcessKeypress() {
                 eSave();
                 break;
 
+            case 'x':
+				// find current row, move right, remove char
+                // TODO
+				break;
+
             case 'z':
+				eSave();
+                write(STDOUT_FILENO, "\x1b[2J", 4);
+                write(STDOUT_FILENO, "\x1b[H", 3);
+				exit(0);
+				break;
+
+            case 'q':
                 if (E.dirty && quit_times > 0) {
                     eSetStatusMessage("File changed. "
-                      "Press C-q %d more times to quit.", quit_times);
+                      "Press q %d more times to quit.", quit_times);
                     quit_times--;
                     return;
                 }
@@ -769,8 +782,6 @@ int main(int argc, char *argv[]) {
     initEditor();
     if (argc >= 2)
         eOpen(argv[1]);
-
-    eSetStatusMessage("C-q to quit");
 
     while (1) {
         eRefreshScreen();
