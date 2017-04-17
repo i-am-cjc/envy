@@ -681,7 +681,6 @@ void eProcessKeypress() {
         }
     } else { // normal mode 
         switch(c) {
-            // Some of these are temp whilst I implemental modes
             case 'd':
 				// TODO yank row
                 eDelRow(E.cy);
@@ -698,6 +697,7 @@ void eProcessKeypress() {
 			case 'O':
 				E.cy--;
 			case 'o':
+				if (E.cy > E.numrows) E.cy--;
 				E.cx = E.row[E.cy].size;
 				eInsertNewLine();
 				E.mode = 1;
@@ -706,6 +706,13 @@ void eProcessKeypress() {
             case '/':
                 eFind();
                 break;
+
+			case 'g':
+				E.cy = 0;
+				break;
+			case 'G':
+				E.cy = E.numrows - 1;
+				break;
 
             case 'i':
                 E.mode = 1;
