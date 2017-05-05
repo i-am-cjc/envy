@@ -2,6 +2,8 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include "config.h"
+
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
@@ -14,10 +16,6 @@
 #include <time.h>
 #include <stdarg.h>
 #include <fcntl.h>
-
-#define ENVY_VERSION "0.0.1"
-#define ENVY_TAB_STOP 4
-#define ENVY_QUIT_TIMES 2
 
 // CTRL Key basically strips the 6 and 7th bit from the key that has been
 // pressed with ctrl, nice!
