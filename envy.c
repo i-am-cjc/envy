@@ -20,6 +20,7 @@
 #include "editorconfig.h"
 #include "buffer.h"
 #include "row.h"
+#include "stack.h"
 
 // acts as a constructor for an empty buffer
 #define ABUF_INIT {NULL, 0}
@@ -33,7 +34,6 @@ struct editorConfig E;
 /*** prototypes ***/
 char *ePrompt(char *prompt, void (*callback)(char *, int));
 int eRowCxToRx(erow *row, int cx);
-
 
 // OUTPUT
 void eScroll() {
@@ -188,7 +188,7 @@ void eDelChar() {
 
     erow *row = &E.row[E.cy];
     if (E.cx > 0) {
-        eRowDelChar(row, E.cx - 1);
+        eRowDelChar(row, E.cx - 1, &E);
         E.cx--;
     } else {
         E.cx = E.row[E.cy - 1].size;
@@ -451,10 +451,14 @@ void eProcessKeypress() {
 
 			case 'y':
 				// TODO yank row
+				stackPush(&E.row[E.cy]);
 				break;
 
 			case 'p':
 				// TODO put row
+                if (stackEmpty()) break;
+                eInsertNewLine();
+                E.row[E.cy + 1] = stackPop();
 				break;
 
 			case 'O':

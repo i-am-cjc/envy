@@ -7,4 +7,4 @@ void eFreeRow(erow *row);
 void eDelRow(int at);
 void eRowInsertChar(erow *row, int at, int c, struct editorConfig *E);
 void eRowAppendString(erow *row, char *s, size_t len);
-void eRowDelChar(erow *row, int at);
+void eRowDelChar(erow *row, int at, struct editorConfig *E);
