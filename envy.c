@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 
 #include "config.h"
+#include "buffer.h"
 
 #include <unistd.h>
 #include <termios.h>
@@ -16,6 +17,9 @@
 #include <time.h>
 #include <stdarg.h>
 #include <fcntl.h>
+
+// acts as a constructor for an empty buffer
+#define ABUF_INIT {NULL, 0}
 
 // CTRL Key basically strips the 6 and 7th bit from the key that has been
 // pressed with ctrl, nice!
@@ -58,27 +62,6 @@ struct editorConfig E;
 char *ePrompt(char *prompt, void (*callback)(char *, int));
 int eRowCxToRx(erow *row, int cx);
 
-/*** APPEND BUFFER ***/
-struct abuf {
-    char *b;
-    int len;
-};
-
-// acts as a constructor for an empty buffer
-#define ABUF_INIT {NULL, 0}
-
-void abAppend(struct abuf *ab, const char *s, int len) {
-    char *new = realloc(ab->b, ab->len + len);
-    
-    if (new == NULL) return;
-    memcpy(&new[ab->len], s, len);
-    ab->b = new;
-    ab->len += len;
-}
-
-void abFree(struct abuf *ab) {
-    free(ab->b);
-}
 
 // OUTPUT
 void eScroll() {
