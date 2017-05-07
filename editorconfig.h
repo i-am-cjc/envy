@@ -1,3 +1,6 @@
+#ifndef EDITORCONFIG_H
+#define EDITORCONFIG_H
+
 #include <termios.h>
 #include <time.h>
 
@@ -19,3 +22,4 @@ struct editorConfig {
     time_t statusmsg_time;
 	int mode; // 0 for N, 1 for I
 };
+#endif
