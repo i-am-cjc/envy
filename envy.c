@@ -2,9 +2,6 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
-#include "config.h"
-#include "buffer.h"
-
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
@@ -17,6 +14,11 @@
 #include <time.h>
 #include <stdarg.h>
 #include <fcntl.h>
+
+#include "config.h"
+#include "editorconfig.h"
+#include "buffer.h"
+#include "row.h"
 
 // acts as a constructor for an empty buffer
 #define ABUF_INIT {NULL, 0}
@@ -32,29 +34,6 @@ enum eKey {
     RIGHT
 };
 
-typedef struct erow {
-    int size;
-    int rsize;
-    char *chars;
-    char *render;
-} erow;
-
-struct editorConfig {
-    int cx, cy;
-    int rx;
-    int rowoff;
-    int coloff;
-    int screenrows;
-    int screencols;
-    int numrows;
-    erow *row;
-    int dirty;
-    char *filename;
-    struct termios origTermios;
-    char statusmsg[80];
-    time_t statusmsg_time;
-	int mode; // 0 for N, 1 for I
-};
 
 struct editorConfig E;
 
@@ -269,117 +248,10 @@ int eReadKey() {
     }
 }
 
-/*** Row Ops ***/
-int eRowCxToRx(erow *row, int cx) {
-    int rx = 0;
-    int i;
-    for (i = 0; i < cx; i++) {
-        if (row->chars[i] == '\t')
-            rx += (ENVY_TAB_STOP - 1) - (rx % ENVY_TAB_STOP);
-        rx++;
-    }
-    return rx;
-}
-
-int erowRxToCx(erow *row, int rx) {
-    int cur_rx = 0;
-    int cx;
-    for (cx = 0; cx < row->size; cx++) {
-        if (row->chars[cx] == '\t')
-            cur_rx += (ENVY_TAB_STOP - 1) - (cur_rx % ENVY_TAB_STOP);
-        cur_rx++;
-
-        if (cur_rx > rx) return cx;
-    }
-
-    return cx;
-}
-
-void eUpdateRow(erow *row) {
-    int tabs = 0;
-    int i;
-    for (i = 0; i < row->size; i++)
-        if (row->chars[i] == '\t') tabs++;
-
-    free(row->render);
-    row->render = malloc(row->size + tabs*(ENVY_TAB_STOP - 1) + 1);
-
-    int idx = 0;
-    for (i = 0; i < row->size; i++) {
-        if (row->chars[i] == '\t') {
-            row->render[idx++] = ' ';
-            while (idx % ENVY_TAB_STOP  != 0) row->render[idx++] = ' ';
-        } else {
-            row->render[idx++] = row->chars[i];
-        }
-    }
-    row->render[idx] = '\0';
-    row->rsize = idx;
-}
-
-void eInsertRow(int at, char *s, size_t len) {
-    if (at < 0 || at > E.numrows) return;
-
-    E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-    memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
-
-    E.row[at].size = len;
-    E.row[at].chars = malloc(len + 1);
-    memcpy(E.row[at].chars, s, len);
-    E.row[at].chars[len] = '\0';
-
-    E.row[at].rsize = 0;
-    E.row[at].render = NULL;
-    eUpdateRow(&E.row[at]);
-
-    E.numrows++;
-    E.dirty++;
-}
-
-void eFreeRow(erow *row) {
-    free(row->render);
-    free(row->chars);
-}
-
-void eDelRow(int at) {
-    if (at < 0 || at >= E.numrows) return;
-    eFreeRow(&E.row[at]);
-    memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
-    E.numrows--;
-    E.dirty++;
-}
-
-void eRowInsertChar(erow *row, int at, int c) {
-    if (at < 0 || at > row->size) at = row->size;
-    row->chars = realloc(row->chars, row->size + 2);
-    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
-    row->size++;
-    row->chars[at] = c;
-    eUpdateRow(row);
-    E.dirty++;
-}
-
-void eRowAppendString(erow *row, char *s, size_t len) {
-    row->chars = realloc(row->chars, row->size + len + 1);
-    memcpy(&row->chars[row->size], s, len);
-    row->size += len;
-    row->chars[row->size] = '\0';
-    eUpdateRow(row);
-    E.dirty++;
-}
-
-void eRowDelChar(erow *row, int at) {
-    if (at < 0 || at >= row->size) return;
-    memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
-    row->size--;
-    eUpdateRow(row);
-    E.dirty++;
-}
-
 /*** Editor Ops ***/
 void eInsertChar(int c) {
     if (E.cy == E.numrows)
-        eInsertRow(E.numrows, "", 0);
+        eInsertRow(E.numrows, "", 0, &E);
 
     eRowInsertChar(&E.row[E.cy], E.cx, c);
     E.cx++;
@@ -387,10 +259,10 @@ void eInsertChar(int c) {
 
 void eInsertNewLine() {
     if (E.cx == 0) {
-        eInsertRow(E.cy, "", 0);
+        eInsertRow(E.cy, "", 0, &E);
     } else {
         erow *row = &E.row[E.cy];
-        eInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+        eInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx, &E);
         row = &E.row[E.cy];
         row->size = E.cx;
         row->chars[row->size] = '\0';
@@ -451,7 +323,7 @@ void eOpen(char *filename) {
     while ((linelen = getline(&line, &linecap, fp)) != -1) {
         if (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
-        eInsertRow(E.numrows, line, linelen);
+        eInsertRow(E.numrows, line, linelen, &E);
     }
     free(line);
     fclose(fp);
