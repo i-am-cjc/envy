@@ -192,8 +192,8 @@ void eDelChar() {
         E.cx--;
     } else {
         E.cx = E.row[E.cy - 1].size;
-        eRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
-        eDelRow(E.cy);
+        eRowAppendString(&E.row[E.cy - 1], row->chars, row->size, &E);
+        eDelRow(E.cy, &E);
         E.cy--;
     }
 }
@@ -446,7 +446,7 @@ void eProcessKeypress() {
         switch(c) {
             case 'd':
 				// TODO yank row
-                eDelRow(E.cy);
+                eDelRow(E.cy, &E);
                 break;
 
 			case 'y':
