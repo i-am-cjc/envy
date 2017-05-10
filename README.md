@@ -14,5 +14,6 @@ Things that are working:
 * Searching
 
 TODO:
-* Lots of commands to implement in the source
-* Make tabs just use space, and let the flame wars begin
+* Yank / Delete and paste with the stack (y/d/p/P)
+* Fix some of the segfaults since breaking up the files
+* Simple syntax highlighting, based off the latter parts of the kilo tutorial
