@@ -7,8 +7,6 @@ http://viewsourcecode.org/snaptoken/kilo/
 
 Loosely based on how I use vim.
 
-In a state that it can alter files, and save them
-
 Things that are working:
 * Modes: Insert, and Normal
 * Searching

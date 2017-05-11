@@ -412,8 +412,6 @@ void eMoveCursor(int key) {
 }
 
 void eProcessKeypress() {
-    static int quit_times = ENVY_QUIT_TIMES;
-
     int c = eReadKey();
 
     if (E.mode) { // insert mode
@@ -513,19 +511,18 @@ void eProcessKeypress() {
 				break;
 
             case 'q':
-                if (E.dirty && quit_times > 0) {
+                if (E.dirty) {
                     eSetStatusMessage("File changed. "
-                      "Press q %d more times to quit.", quit_times);
-                    quit_times--;
+                      "Press Q to quit without saving.");
                     return;
                 }
+            case 'Q':
                 write(STDOUT_FILENO, "\x1b[2J", 4);
                 write(STDOUT_FILENO, "\x1b[H", 3);
                 exit(0);
                 break;
 
         }
-        quit_times = ENVY_QUIT_TIMES;
     }
 }
 
