@@ -20,7 +20,6 @@
 #include "editorconfig.h"
 #include "buffer.h"
 #include "row.h"
-#include "stack.h"
 
 // acts as a constructor for an empty buffer
 #define ABUF_INIT {NULL, 0}
@@ -387,18 +386,22 @@ void eMoveCursor(int key) {
 
     switch(key) {
         case LEFT:
+		case 'h':
             if (E.cx != 0)
                 E.cx--;
             break;
         case DOWN:
+		case 'j':
             if (E.cy < E.numrows)
                 E.cy++;
             break;
         case UP:
+		case 'k':
             if (E.cy != 0)
                 E.cy--;
             break;
         case RIGHT:
+		case 'l':
             if (row && E.cx < row->size)
                 E.cx++;
             break;
@@ -449,14 +452,10 @@ void eProcessKeypress() {
 
 			case 'y':
 				// TODO yank row
-				stackPush(&E.row[E.cy]);
 				break;
 
 			case 'p':
 				// TODO put row
-                if (stackEmpty()) break;
-                eInsertNewLine();
-                E.row[E.cy + 1] = stackPop();
 				break;
 
 			case 'O':
@@ -483,6 +482,10 @@ void eProcessKeypress() {
                 E.mode = 1;
                 break;
 
+			case 'h':
+			case 'j':
+			case 'k':
+			case 'l':
             case RIGHT:
             case LEFT:
             case DOWN:
